@@ -60,12 +60,13 @@ jobs:
         run: mvn -B -ntp com.github.spotbugs:spotbugs-maven-plugin:check || true
 
       # 6) Spotless (soft check)
-      - name: Verify Code Formatting (Spotless, soft)
+      - name: Verify Code Formatting (Spotless)
         working-directory: ./app
         run: mvn -B -ntp spotless:check || echo "⚠️ Spotless found formatting issues (ignored)"
 
       # 7) Collect Java files for ChatGPT
-      - name: Collect ua.opnu Java files
+      - id: Collect_ua_opnu_Java_files
+        name: Collect ua.opnu Java files
         run: |
           mkdir -p chatgpt
           git ls-files | grep -E 'app/src/.*/ua/opnu/.*\.java$' > java_files_for_review.txt || true
@@ -83,31 +84,34 @@ jobs:
         run: |
           python3 -m pip install --upgrade pip requests
           cat > gpt_review.py << 'PY'
-          import os, json, pathlib, requests
-          api_key = os.environ.get("OPENAI_API_KEY")
-          model = os.environ.get("CHATGPT_MODEL","gpt-5-nano")
-          system_instructions = os.environ.get("CHATGPT_PROMPT")
-          files = [p.strip() for p in open("java_files_for_review.txt","r").read().splitlines() if p.strip()]
-          text = ""
-          for fp in files:
-              with open(fp,"r",encoding="utf-8",errors="ignore") as f:
-                  text += f"\n\n### FILE: {fp}\n```java\n{f.read()}\n```"
-          if api_key:
-              headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-              body = {"model": model, "input": text, "instructions": system_instructions}
-              r = requests.post("https://api.openai.com/v1/responses", headers=headers, data=json.dumps(body))
-              out = "_(No textual content parsed from response)_"
-              if r.status_code == 200:
-                  data = r.json()
-                  out = data.get("output_text") or "\n".join(
-                      c["text"] for item in data.get("output", []) for c in item.get("content", []) if "text" in c
-                  )
-              else:
-                  out = f"API error {r.status_code}: {r.text[:500]}"
-              pathlib.Path("chatgpt/chatgpt_report.md").write_text(out, encoding="utf-8")
-          else:
-              pathlib.Path("chatgpt/chatgpt_report.md").write_text("_Not generated (no key)_", encoding="utf-8")
-          PY
+import os, json, pathlib, requests
+
+api_key = os.environ.get("OPENAI_API_KEY")
+model = os.environ.get("CHATGPT_MODEL","gpt-5-nano")
+system_instructions = os.environ.get("CHATGPT_PROMPT")
+
+files = [p.strip() for p in open("java_files_for_review.txt","r").read().splitlines() if p.strip()]
+text = ""
+for fp in files:
+    with open(fp,"r",encoding="utf-8",errors="ignore") as f:
+        text += f"\n\n### FILE: {fp}\n```java\n{f.read()}\n```"
+
+if api_key:
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    body = {"model": model, "input": text, "instructions": system_instructions}
+    r = requests.post("https://api.openai.com/v1/responses", headers=headers, data=json.dumps(body))
+    out = "_(No textual content parsed from response)_"
+    if r.status_code == 200:
+        data = r.json()
+        out = data.get("output_text") or "\n".join(
+            c["text"] for item in data.get("output", []) for c in item.get("content", []) if "text" in c
+        )
+    else:
+        out = f"API error {r.status_code}: {r.text[:500]}"
+    pathlib.Path("chatgpt/chatgpt_report.md").write_text(out, encoding="utf-8")
+else:
+    pathlib.Path("chatgpt/chatgpt_report.md").write_text("_Not generated (no key)_", encoding="utf-8")
+PY
           python3 gpt_review.py
 
       # 9) Ensure ChatGPT report exists
