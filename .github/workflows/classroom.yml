@@ -1,15 +1,18 @@
-name: Checking lab work
+name: Classroom Checks
 
-on: [push]
+on:
+  pull_request:
+    branches: [ main ]
 
 permissions:
-  checks: write
   contents: read
+  checks: write
   actions: read
 
 jobs:
+  # === Job для перевірки тестів та статичного аналізу ===
   build:
-    name: Compile + Tests + Static Analysis + ChatGPT
+    name: Build + Tests + Static Analysis
     runs-on: ubuntu-latest
 
     env:
@@ -17,13 +20,8 @@ jobs:
       CHATGPT_MODEL: gpt-5-nano
       CHATGPT_PROMPT: >
         Проаналізуй наступний код студента мовою Java.
-        Перевір коректність виконання завдання: чи відповідає код умові, чи немає логічних помилок, чи працює програма для різних вхідних даних.
-        Перевір оформлення коду.
-        Склади звіт у двох розділах:
-        Коректність коду - перерахуй знайдені помилки або вкажи, що код працює правильно.
-        Стиль коду - перерахуй порушення стилю, запропонуй поліпшення.
-        Не треба писати нічого крім відповіді. Не треба пропонувати.
-        Оцінити роботу загалом за 100 бальною оцінкою.
+        Перевір коректність виконання завдання, логіку та стиль.
+        Склади короткий звіт.
 
     steps:
       - uses: actions/checkout@v4
@@ -34,39 +32,38 @@ jobs:
           java-version: '17'
           cache: maven
 
-      # 1) Compilation
-      - name: Compile (skip tests)
+      # 1) Compile
+      - name: Compile project
         working-directory: ./app
         run: mvn -B -ntp -DskipTests=true clean package
 
-      # 2) Unit tests
-      - name: Run Unit Tests
+      # 2) Run Unit Tests
+      - name: Run Tests
         working-directory: ./app
-        run: mvn -B -ntp test || echo "⚠️ Tests failed but continuing"
+        run: mvn -B -ntp test || echo "⚠️ Tests failed but job continues"
 
-      # 3) Checkstyle
+      # 3) Checkstyle (soft)
       - name: Run Checkstyle
         working-directory: ./app
-        run: mvn -B -ntp checkstyle:checkstyle || echo "⚠️ Checkstyle issues detected"
+        run: mvn -B -ntp checkstyle:checkstyle || echo "⚠️ Checkstyle issues"
 
-      # 4) PMD
+      # 4) PMD (soft)
       - name: Run PMD
         working-directory: ./app
-        run: mvn -B -ntp pmd:check || echo "⚠️ PMD issues detected"
+        run: mvn -B -ntp pmd:check || echo "⚠️ PMD issues"
 
-      # 5) SpotBugs
+      # 5) SpotBugs (soft)
       - name: Run SpotBugs
         working-directory: ./app
-        run: mvn -B -ntp com.github.spotbugs:spotbugs-maven-plugin:check || echo "⚠️ SpotBugs issues detected"
+        run: mvn -B -ntp com.github.spotbugs:spotbugs-maven-plugin:check || echo "⚠️ SpotBugs issues"
 
-      # 6) Spotless (soft check)
-      - name: Verify Code Formatting (Spotless, soft)
+      # 6) Spotless (soft)
+      - name: Spotless check
         working-directory: ./app
-        run: |
-          mvn -B -ntp spotless:check || echo "⚠️ Spotless found formatting issues (ignored)"
+        run: mvn -B -ntp spotless:check || echo "⚠️ Spotless issues"
 
-      # ==== ChatGPT: review all files in package ua.opnu ====
-      - name: Collect ua.opnu Java files
+      # 7) Generate ChatGPT report (soft)
+      - name: Collect Java files
         id: target
         run: |
           git ls-files | grep -E 'app/src/.*/ua/opnu/.*\.java$' > java_files_for_review.txt || true
@@ -78,17 +75,17 @@ jobs:
             echo "has_files=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: ChatGPT code review (ua.opnu package, Markdown output)
+      - name: ChatGPT code review
         if: ${{ steps.target.outputs.has_files == 'true' }}
         run: |
           mkdir -p chatgpt
-          if [ -z "$OPENAI_API_KEY" ]; then
-            echo "# ChatGPT Review Report\n\n_Not generated (no key)_" > chatgpt/chatgpt_report.md
-          else
-            python3 -m pip install --upgrade pip requests
-            cat > gpt_review.py << 'PY'
+          python3 -m pip install --upgrade pip requests
+          cat > gpt_review.py << 'PY'
 import os, json, pathlib, requests
-api_key = os.environ["OPENAI_API_KEY"]
+api_key = os.environ.get("OPENAI_API_KEY")
+if not api_key:
+    pathlib.Path("chatgpt/chatgpt_report.md").write_text("_No API key_", encoding="utf-8")
+    exit(0)
 model   = os.environ.get("CHATGPT_MODEL","gpt-5-nano")
 system_instructions = os.environ.get("CHATGPT_PROMPT")
 files = [p.strip() for p in open("java_files_for_review.txt","r").read().splitlines() if p.strip()]
@@ -101,31 +98,22 @@ body = {"model": model, "input": text, "instructions": system_instructions, "tex
 r = requests.post("https://api.openai.com/v1/responses", headers=headers, data=json.dumps(body))
 if r.status_code == 200:
     data = r.json()
-    out = data.get("output_text")
-    if not out:
-        parts = []
-        for item in data.get("output", []):
-            for c in item.get("content", []):
-                if "text" in c:
-                    parts.append(c["text"])
-        out = "\n".join(parts)
-    if not out:
-        out = "_(No textual content parsed from response)_"
+    out = data.get("output_text") or "_No text output_"
     pathlib.Path("chatgpt/chatgpt_report.md").write_text(out, encoding="utf-8")
 else:
-    pathlib.Path("chatgpt/chatgpt_report.md").write_text(f"API error {r.status_code}: {r.text[:500]}", encoding="utf-8")
+    pathlib.Path("chatgpt/chatgpt_report.md").write_text(f"API error {r.status_code}", encoding="utf-8")
 PY
-            python3 gpt_review.py
+          python3 gpt_review.py
 
       - name: Ensure ChatGPT report exists
         if: always()
         run: |
           if [ ! -f chatgpt/chatgpt_report.md ]; then
             mkdir -p chatgpt
-            echo "# ChatGPT Review Report\n\n_Not generated._" > chatgpt/chatgpt_report.md
+            echo "_Not generated_" > chatgpt/chatgpt_report.md
 
-      # 7) Archive all reports
-      - name: Archive Reports
+      # 8) Upload reports
+      - name: Archive reports
         uses: actions/upload-artifact@v4
         with:
           name: reports
@@ -134,5 +122,3 @@ PY
             app/target/checkstyle-result.xml
             app/target/site/checkstyle.html
             app/target/site/pmd.html
-            app/target/spotbugsXml.xml
-          if-no-files-found: warn
