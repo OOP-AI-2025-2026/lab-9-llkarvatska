@@ -24,6 +24,7 @@ jobs:
         Стиль коду - перерахуй порушення стилю, запропонуй поліпшення.
         Не треба писати нічого крім відповіді. Не треба пропонувати.
         Оцінити роботу загалом за 100 бальною оцінкою.
+
     steps:
       - uses: actions/checkout@v4
 
@@ -87,42 +88,42 @@ jobs:
           fi
           python3 -m pip install --upgrade pip requests
           cat > gpt_review.py << 'PY'
-          import os, json, pathlib, requests
-          api_key = os.environ["OPENAI_API_KEY"]
-          model   = os.environ.get("CHATGPT_MODEL","gpt-5-nano")
-          system_instructions = os.environ.get("CHATGPT_PROMPT")
-          files = [p.strip() for p in open("java_files_for_review.txt","r").read().splitlines() if p.strip()]
-          text = ""
-          for fp in files:
-              with open(fp,"r",encoding="utf-8",errors="ignore") as f:
-                  text += f"\n\n### FILE: {fp}\n```java\n{f.read()}\n```"
-          headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-          body = {
-              "model": model,
-              "input": text,
-              "instructions": system_instructions,
-              "text": {"format": {"type":"text"}}
-          }
-          r = requests.post("https://api.openai.com/v1/responses", headers=headers, data=json.dumps(body))
-          if r.status_code == 200:
-              data = r.json()
-              out = data.get("output_text")
-              if not out:
-                  parts = []
-                  for item in data.get("output", []):
-                      for c in item.get("content", []):
-                          if "text" in c:
-                              parts.append(c["text"])
-                  out = "\n".join(parts)
-              if not out:
-                  out = "_(No textual content parsed from response)_"
-              pathlib.Path("chatgpt/chatgpt_report.md").write_text(out, encoding="utf-8")
-          else:
-              pathlib.Path("chatgpt/chatgpt_report.md").write_text(
-                  f"API error {r.status_code}: {r.text[:500]}",
-                  encoding="utf-8"
-              )
-          PY
+import os, json, pathlib, requests
+api_key = os.environ["OPENAI_API_KEY"]
+model   = os.environ.get("CHATGPT_MODEL","gpt-5-nano")
+system_instructions = os.environ.get("CHATGPT_PROMPT")
+files = [p.strip() for p in open("java_files_for_review.txt","r").read().splitlines() if p.strip()]
+text = ""
+for fp in files:
+    with open(fp,"r",encoding="utf-8",errors="ignore") as f:
+        text += f"\n\n### FILE: {fp}\n```java\n{f.read()}\n```"
+headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+body = {
+    "model": model,
+    "input": text,
+    "instructions": system_instructions,
+    "text": {"format": {"type":"text"}}
+}
+r = requests.post("https://api.openai.com/v1/responses", headers=headers, data=json.dumps(body))
+if r.status_code == 200:
+    data = r.json()
+    out = data.get("output_text")
+    if not out:
+        parts = []
+        for item in data.get("output", []):
+            for c in item.get("content", []):
+                if "text" in c:
+                    parts.append(c["text"])
+        out = "\n".join(parts)
+    if not out:
+        out = "_(No textual content parsed from response)_"
+    pathlib.Path("chatgpt/chatgpt_report.md").write_text(out, encoding="utf-8")
+else:
+    pathlib.Path("chatgpt/chatgpt_report.md").write_text(
+        f"API error {r.status_code}: {r.text[:500]}",
+        encoding="utf-8"
+    )
+PY
           python3 gpt_review.py
 
       - name: Ensure ChatGPT report exists
@@ -131,6 +132,7 @@ jobs:
           if [ ! -f chatgpt/chatgpt_report.md ]; then
             mkdir -p chatgpt
             echo "# ChatGPT Review Report\n\n_Not generated._" > chatgpt/chatgpt_report.md
+          fi
 
       # 7) Archive all reports
       - name: Archive Reports
