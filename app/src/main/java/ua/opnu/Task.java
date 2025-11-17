@@ -65,13 +65,22 @@ public class Task {
     // TASK 6: isPalindrome()
     // -------------------------------
     public boolean isPalindrome(Queue<Integer> queue) {
-        ArrayDeque<Integer> stack = new ArrayDeque<>(queue);
-        Iterator<Integer> iter = queue.iterator();
-        for (Integer i : stack) {
-            if (!iter.next().equals(i)) return false;
+        if (queue.isEmpty()) return true;
+
+        List<Integer> list = new ArrayList<>(queue); // копія черги
+        int left = 0;
+        int right = list.size() - 1;
+
+        while (left < right) {
+            if (!list.get(left).equals(list.get(right))) {
+                return false;
+            }
+            left++;
+            right--;
         }
         return true;
     }
+
 
     // -------------------------------
     // TASK 7: reorder()
