@@ -5,22 +5,27 @@ import java.util.*;
 public class Task {
 
     public static void main(String[] args) {
-
+        // Тут можна додати тестування методів
     }
 
     // -------------------------------
     // TASK 1: removeShorterStrings()
     // -------------------------------
     public void removeShorterStrings(List<String> list) {
-        list.removeIf(s -> s.length() < 4);
+        if (list.isEmpty()) return;
+        int maxLength = list.stream().mapToInt(String::length).max().orElse(0);
+        list.removeIf(s -> s.length() < maxLength);
     }
 
     // -------------------------------
     // TASK 2: stutter()
     // -------------------------------
     public void stutter(List<String> list) {
-        for (int i = 0; i < list.size(); i += 2) {
-            list.add(i, list.get(i));
+        List<String> copy = new ArrayList<>(list);
+        list.clear();
+        for (String s : copy) {
+            list.add(s);
+            list.add(s);
         }
     }
 
@@ -28,8 +33,10 @@ public class Task {
     // TASK 3: switchPairs()
     // -------------------------------
     public void switchPairs(List<String> list) {
-        for (int i = 0; i + 1 < list.size(); i += 2) {
-            Collections.swap(list, i, i + 1);
+        for (int i = 0; i < list.size() - 1; i += 2) {
+            String temp = list.get(i);
+            list.set(i, list.get(i + 1));
+            list.set(i + 1, temp);
         }
     }
 
@@ -38,34 +45,30 @@ public class Task {
     // -------------------------------
     public void removeDuplicates(List<String> list) {
         Set<String> seen = new HashSet<>();
-        Iterator<String> it = list.iterator();
-        while (it.hasNext()) {
-            String s = it.next();
-            if (seen.contains(s)) it.remove();
-            else seen.add(s);
-        }
+        list.removeIf(s -> !seen.add(s));
     }
 
     // -------------------------------
     // TASK 5: markLength4()
     // -------------------------------
     public void markLength4(List<String> list) {
-        for (int i = 0; i < list.size(); i++) {
-            if (list.get(i).length() == 4) {
-                list.add(i, "****");
-                i++; // пропустити доданий елемент
-            }
+        List<String> result = new ArrayList<>();
+        for (String s : list) {
+            if (s.length() == 4) result.add("****");
+            result.add(s);
         }
+        list.clear();
+        list.addAll(result);
     }
 
     // -------------------------------
     // TASK 6: isPalindrome()
     // -------------------------------
     public boolean isPalindrome(Queue<Integer> queue) {
-        List<Integer> list = new ArrayList<>(queue);
-        int n = list.size();
-        for (int i = 0; i < n / 2; i++) {
-            if (!list.get(i).equals(list.get(n - 1 - i))) return false;
+        ArrayDeque<Integer> stack = new ArrayDeque<>(queue);
+        Iterator<Integer> iter = queue.iterator();
+        for (Integer i : stack) {
+            if (!iter.next().equals(i)) return false;
         }
         return true;
     }
@@ -75,8 +78,8 @@ public class Task {
     // -------------------------------
     public void reorder(Queue<Integer> queue) {
         List<Integer> list = new ArrayList<>(queue);
-        list.sort(Integer::compareTo);
         queue.clear();
+        list.sort(Integer::compareTo);
         queue.addAll(list);
     }
 
@@ -86,11 +89,11 @@ public class Task {
     public void rearrange(Queue<Integer> queue) {
         List<Integer> evens = new ArrayList<>();
         List<Integer> odds = new ArrayList<>();
-        while (!queue.isEmpty()) {
-            int x = queue.remove();
+        for (Integer x : queue) {
             if (x % 2 == 0) evens.add(x);
             else odds.add(x);
         }
+        queue.clear();
         queue.addAll(evens);
         queue.addAll(odds);
     }
@@ -99,9 +102,7 @@ public class Task {
     // TASK 9: maxLength()
     // -------------------------------
     public int maxLength(Set<String> set) {
-        int max = 0;
-        for (String s : set) max = Math.max(max, s.length());
-        return max;
+        return set.stream().mapToInt(String::length).max().orElse(0);
     }
 
     // -------------------------------
@@ -125,8 +126,11 @@ public class Task {
     // TASK 12: isUnique()
     // -------------------------------
     public boolean isUnique(Map<String, String> map) {
-        Set<String> values = new HashSet<>(map.values());
-        return values.size() == map.size();
+        Set<String> values = new HashSet<>();
+        for (String v : map.values()) {
+            if (!values.add(v)) return false;
+        }
+        return true;
     }
 
     // -------------------------------
@@ -134,9 +138,9 @@ public class Task {
     // -------------------------------
     public Map<String, Integer> intersect(Map<String, Integer> map1, Map<String, Integer> map2) {
         Map<String, Integer> result = new HashMap<>();
-        for (String key : map1.keySet()) {
-            if (map2.containsKey(key) && map2.get(key).equals(map1.get(key))) {
-                result.put(key, map1.get(key));
+        for (Map.Entry<String, Integer> e : map1.entrySet()) {
+            if (map2.containsKey(e.getKey()) && map2.get(e.getKey()).equals(e.getValue())) {
+                result.put(e.getKey(), e.getValue());
             }
         }
         return result;
@@ -157,19 +161,15 @@ public class Task {
     // TASK 15: rarest()
     // -------------------------------
     public int rarest(Map<String, Integer> map) {
+        if (map.isEmpty()) return 0;
         Map<Integer, Integer> freq = new HashMap<>();
-        for (int v : map.values()) freq.put(v, freq.getOrDefault(v, 0) + 1);
+        for (int val : map.values()) freq.put(val, freq.getOrDefault(val, 0) + 1);
 
-        int minCount = Integer.MAX_VALUE;
-        int rareValue = Integer.MAX_VALUE;
-        for (Map.Entry<Integer, Integer> e : freq.entrySet()) {
-            int val = e.getKey(), count = e.getValue();
-            if (count < minCount || (count == minCount && val < rareValue)) {
-                minCount = count;
-                rareValue = val;
-            }
-        }
-        return rareValue;
+        return freq.entrySet().stream()
+                .min((a, b) -> a.getValue().equals(b.getValue()) ?
+                        Integer.compare(a.getKey(), b.getKey()) :
+                        Integer.compare(a.getValue(), b.getValue()))
+                .get().getKey();
     }
 
     // -------------------------------
@@ -179,10 +179,10 @@ public class Task {
         if (list.isEmpty()) return 0;
         Map<Integer, Integer> freq = new HashMap<>();
         int max = 0;
-        for (int x : list) {
-            int f = freq.getOrDefault(x, 0) + 1;
-            freq.put(x, f);
-            max = Math.max(max, f);
+        for (int n : list) {
+            int f = freq.getOrDefault(n, 0) + 1;
+            freq.put(n, f);
+            if (f > max) max = f;
         }
         return max;
     }
