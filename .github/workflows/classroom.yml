@@ -39,27 +39,27 @@ jobs:
         working-directory: ./app
         run: mvn -B -ntp -DskipTests=true clean package
 
-      # 2) Unit tests
+      # 2) Run Unit Tests
       - name: Run Unit Tests
         working-directory: ./app
         run: mvn -B -ntp test
 
-      # 3) Checkstyle
+      # 3) Checkstyle (soft)
       - name: Run Checkstyle
         working-directory: ./app
-        run: mvn -B -ntp checkstyle:checkstyle || true
+        run: mvn -B -ntp checkstyle:checkstyle || echo "⚠️ Checkstyle found issues (ignored)"
 
-      # 4) PMD
+      # 4) PMD (soft)
       - name: Run PMD
         working-directory: ./app
-        run: mvn -B -ntp pmd:check || true
+        run: mvn -B -ntp pmd:check || echo "⚠️ PMD found issues (ignored)"
 
-      # 5) SpotBugs
+      # 5) SpotBugs (soft)
       - name: Run SpotBugs
         working-directory: ./app
-        run: mvn -B -ntp com.github.spotbugs:spotbugs-maven-plugin:check || true
+        run: mvn -B -ntp com.github.spotbugs:spotbugs-maven-plugin:check || echo "⚠️ SpotBugs found issues (ignored)"
 
-      # 6) Spotless
+      # 6) Spotless (soft)
       - name: Verify Code Formatting (Spotless, soft)
         working-directory: ./app
         run: mvn -B -ntp spotless:check || echo "⚠️ Spotless found formatting issues (ignored)"
@@ -68,7 +68,6 @@ jobs:
       - name: Collect ua.opnu Java files
         id: target
         run: |
-          set -e
           git ls-files | grep -E 'app/src/.*/ua/opnu/.*\.java$' > java_files_for_review.txt || true
           COUNT=$(wc -l < java_files_for_review.txt | xargs)
           echo "count=$COUNT" >> $GITHUB_OUTPUT
@@ -76,13 +75,11 @@ jobs:
             echo "has_files=true" >> $GITHUB_OUTPUT
           else
             echo "has_files=false" >> $GITHUB_OUTPUT
-          fi
 
-      # 8) ChatGPT code review
+      # 8) ChatGPT review
       - name: ChatGPT code review
         if: ${{ steps.target.outputs.has_files == 'true' }}
         run: |
-          set -e
           mkdir -p chatgpt
           if [ -z "$OPENAI_API_KEY" ]; then
             echo "# ChatGPT Review Report\n\n_Not generated (no key)_" > chatgpt/chatgpt_report.md
