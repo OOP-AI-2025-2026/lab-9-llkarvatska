@@ -1,18 +1,15 @@
-name: Classroom Checks
+name: Checking lab work
 
-on:
-  pull_request:
-    branches: [ main ]
+on: [push, pull_request]
 
 permissions:
-  contents: read
   checks: write
+  contents: read
   actions: read
 
 jobs:
-  # === Job для перевірки тестів та статичного аналізу ===
   build:
-    name: Build + Tests + Static Analysis
+    name: Compile + Tests + Static Analysis + ChatGPT
     runs-on: ubuntu-latest
 
     env:
@@ -20,8 +17,13 @@ jobs:
       CHATGPT_MODEL: gpt-5-nano
       CHATGPT_PROMPT: >
         Проаналізуй наступний код студента мовою Java.
-        Перевір коректність виконання завдання, логіку та стиль.
-        Склади короткий звіт.
+        Перевір коректність виконання завдання: чи відповідає код умові, чи немає логічних помилок, чи працює програма для різних вхідних даних.
+        Перевір оформлення коду.
+        Склади звіт у двох розділах:
+        Коректність коду - перерахуй знайдені помилки або вкажи, що код працює правильно.
+        Стиль коду - перерахуй порушення стилю, запропонуй поліпшення.
+        Не треба писати нічого крім відповіді. Не треба пропонувати.
+        Оцінити роботу загалом за 100 бальною оцінкою.
 
     steps:
       - uses: actions/checkout@v4
@@ -33,39 +35,39 @@ jobs:
           cache: maven
 
       # 1) Compile
-      - name: Compile project
+      - name: Compile (skip tests)
         working-directory: ./app
         run: mvn -B -ntp -DskipTests=true clean package
 
-      # 2) Run Unit Tests
-      - name: Run Tests
+      # 2) Unit tests
+      - name: Run Unit Tests
         working-directory: ./app
-        run: mvn -B -ntp test || echo "⚠️ Tests failed but job continues"
+        run: mvn -B -ntp test
 
-      # 3) Checkstyle (soft)
+      # 3) Checkstyle
       - name: Run Checkstyle
         working-directory: ./app
-        run: mvn -B -ntp checkstyle:checkstyle || echo "⚠️ Checkstyle issues"
+        run: mvn -B -ntp checkstyle:checkstyle || true
 
-      # 4) PMD (soft)
+      # 4) PMD
       - name: Run PMD
         working-directory: ./app
-        run: mvn -B -ntp pmd:check || echo "⚠️ PMD issues"
+        run: mvn -B -ntp pmd:check || true
 
-      # 5) SpotBugs (soft)
+      # 5) SpotBugs
       - name: Run SpotBugs
         working-directory: ./app
-        run: mvn -B -ntp com.github.spotbugs:spotbugs-maven-plugin:check || echo "⚠️ SpotBugs issues"
+        run: mvn -B -ntp com.github.spotbugs:spotbugs-maven-plugin:check || true
 
-      # 6) Spotless (soft)
-      - name: Spotless check
+      # 6) Spotless (soft check)
+      - name: Verify Code Formatting (Spotless, soft)
         working-directory: ./app
-        run: mvn -B -ntp spotless:check || echo "⚠️ Spotless issues"
+        run: mvn -B -ntp spotless:check || echo "⚠️ Spotless found formatting issues (ignored)"
 
-      # 7) Generate ChatGPT report (soft)
-      - name: Collect Java files
-        id: target
+      # 7) Collect Java files for ChatGPT
+      - name: Collect ua.opnu Java files
         run: |
+          mkdir -p chatgpt
           git ls-files | grep -E 'app/src/.*/ua/opnu/.*\.java$' > java_files_for_review.txt || true
           COUNT=$(wc -l < java_files_for_review.txt | xargs)
           echo "count=$COUNT" >> $GITHUB_OUTPUT
@@ -75,45 +77,49 @@ jobs:
             echo "has_files=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: ChatGPT code review
-        if: ${{ steps.target.outputs.has_files == 'true' }}
+      # 8) ChatGPT code review
+      - name: ChatGPT code review (ua.opnu package, Markdown output)
+        if: ${{ steps.Collect_ua_opnu_Java_files.outputs.has_files == 'true' }}
         run: |
-          mkdir -p chatgpt
           python3 -m pip install --upgrade pip requests
           cat > gpt_review.py << 'PY'
-import os, json, pathlib, requests
-api_key = os.environ.get("OPENAI_API_KEY")
-if not api_key:
-    pathlib.Path("chatgpt/chatgpt_report.md").write_text("_No API key_", encoding="utf-8")
-    exit(0)
-model   = os.environ.get("CHATGPT_MODEL","gpt-5-nano")
-system_instructions = os.environ.get("CHATGPT_PROMPT")
-files = [p.strip() for p in open("java_files_for_review.txt","r").read().splitlines() if p.strip()]
-text = ""
-for fp in files:
-    with open(fp,"r",encoding="utf-8",errors="ignore") as f:
-        text += f"\n\n### FILE: {fp}\n```java\n{f.read()}\n```"
-headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-body = {"model": model, "input": text, "instructions": system_instructions, "text": {"format": {"type":"text"}}}
-r = requests.post("https://api.openai.com/v1/responses", headers=headers, data=json.dumps(body))
-if r.status_code == 200:
-    data = r.json()
-    out = data.get("output_text") or "_No text output_"
-    pathlib.Path("chatgpt/chatgpt_report.md").write_text(out, encoding="utf-8")
-else:
-    pathlib.Path("chatgpt/chatgpt_report.md").write_text(f"API error {r.status_code}", encoding="utf-8")
-PY
+          import os, json, pathlib, requests
+          api_key = os.environ.get("OPENAI_API_KEY")
+          model = os.environ.get("CHATGPT_MODEL","gpt-5-nano")
+          system_instructions = os.environ.get("CHATGPT_PROMPT")
+          files = [p.strip() for p in open("java_files_for_review.txt","r").read().splitlines() if p.strip()]
+          text = ""
+          for fp in files:
+              with open(fp,"r",encoding="utf-8",errors="ignore") as f:
+                  text += f"\n\n### FILE: {fp}\n```java\n{f.read()}\n```"
+          if api_key:
+              headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+              body = {"model": model, "input": text, "instructions": system_instructions}
+              r = requests.post("https://api.openai.com/v1/responses", headers=headers, data=json.dumps(body))
+              out = "_(No textual content parsed from response)_"
+              if r.status_code == 200:
+                  data = r.json()
+                  out = data.get("output_text") or "\n".join(
+                      c["text"] for item in data.get("output", []) for c in item.get("content", []) if "text" in c
+                  )
+              else:
+                  out = f"API error {r.status_code}: {r.text[:500]}"
+              pathlib.Path("chatgpt/chatgpt_report.md").write_text(out, encoding="utf-8")
+          else:
+              pathlib.Path("chatgpt/chatgpt_report.md").write_text("_Not generated (no key)_", encoding="utf-8")
+          PY
           python3 gpt_review.py
 
+      # 9) Ensure ChatGPT report exists
       - name: Ensure ChatGPT report exists
         if: always()
         run: |
           if [ ! -f chatgpt/chatgpt_report.md ]; then
             mkdir -p chatgpt
-            echo "_Not generated_" > chatgpt/chatgpt_report.md
+            echo "# ChatGPT Review Report\n\n_Not generated._" > chatgpt/chatgpt_report.md
 
-      # 8) Upload reports
-      - name: Archive reports
+      # 10) Archive all reports
+      - name: Archive Reports
         uses: actions/upload-artifact@v4
         with:
           name: reports
@@ -122,3 +128,5 @@ PY
             app/target/checkstyle-result.xml
             app/target/site/checkstyle.html
             app/target/site/pmd.html
+            app/target/spotbugsXml.xml
+          if-no-files-found: warn
